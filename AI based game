@@ -1,0 +1,220 @@
+import tkinter as tk
+from tkinter import messagebox
+import heapq
+import copy
+
+CELL = 80
+SIZE = 3
+
+# Goal state
+GOAL = [
+    [1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 0]
+]
+
+# Initial puzzle (can modify)
+puzzle = [
+    [1, 2, 3],
+    [4, 0, 5],
+    [7, 8, 6]
+]
+
+zero_pos = [1, 1]  # position of 0 (empty tile)
+game_over = False
+
+root = tk.Tk()
+root.title("8-Puzzle - A* Solver")
+
+canvas = tk.Canvas(root, width=SIZE*CELL, height=SIZE*CELL)
+canvas.pack()
+
+def draw_puzzle():
+    canvas.delete("all")
+    
+    for r in range(SIZE):
+        for c in range(SIZE):
+            val = puzzle[r][c]
+            x1, y1 = c*CELL, r*CELL
+            x2, y2 = x1+CELL, y1+CELL
+            
+            if val == 0:
+                canvas.create_rectangle(x1, y1, x2, y2, fill="lightgray", outline="black", width=2)
+            else:
+                canvas.create_rectangle(x1, y1, x2, y2, fill="white", outline="black", width=2)
+                canvas.create_text(x1+CELL//2, y1+CELL//2, text=str(val), font=("Arial", 24, "bold"))
+    
+    # Draw goal line
+    if puzzle == GOAL:
+        canvas.create_text(SIZE*CELL//2, SIZE*CELL + 20, text="✨ PUZZLE SOLVED! ✨", 
+                          font=("Arial", 14, "bold"), fill="green")
+
+def find_zero(board):
+    for r in range(SIZE):
+        for c in range(SIZE):
+            if board[r][c] == 0:
+                return (r, c)
+    return None
+
+def manhattan_distance(board):
+    """Heuristic: sum of Manhattan distances of each tile from its goal position"""
+    distance = 0
+    for r in range(SIZE):
+        for c in range(SIZE):
+            val = board[r][c]
+            if val != 0:
+                goal_r = (val - 1) // SIZE
+                goal_c = (val - 1) % SIZE
+                distance += abs(r - goal_r) + abs(c - goal_c)
+    return distance
+
+def get_neighbors(board):
+    """Generate possible moves by sliding adjacent tile into empty space"""
+    neighbors = []
+    zero_pos_tuple = find_zero(board)
+    
+    if zero_pos_tuple is None:
+        return neighbors
+    
+    r, c = zero_pos_tuple
+    
+    moves = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # up, down, left, right
+    
+    for dr, dc in moves:
+        nr, nc = r + dr, c + dc
+        if 0 <= nr < SIZE and 0 <= nc < SIZE:
+            new_board = copy.deepcopy(board)
+            new_board[r][c], new_board[nr][nc] = new_board[nr][nc], new_board[r][c]
+            neighbors.append(new_board)
+    
+    return neighbors
+
+def board_to_tuple(board):
+    """Convert board to hashable tuple for visited tracking"""
+    return tuple(tuple(row) for row in board)
+
+def solve_puzzle(start):
+    """A* algorithm to find solution path"""
+    start_tuple = board_to_tuple(start)
+    goal_tuple = board_to_tuple(GOAL)
+    
+    pq = []
+    start_cost = manhattan_distance(start)
+    heapq.heappush(pq, (start_cost, 0, start, []))  # (f-cost, g-cost, board, path)
+    
+    visited = {start_tuple: 0}
+    
+    while pq:
+        f_cost, g_cost, current_board, path = heapq.heappop(pq)
+        current_tuple = board_to_tuple(current_board)
+        
+        if current_tuple == goal_tuple:
+            return path + [current_board]
+        
+        if visited[current_tuple] < g_cost:
+            continue
+        
+        for neighbor in get_neighbors(current_board):
+            neighbor_tuple = board_to_tuple(neighbor)
+            new_g = g_cost + 1
+            new_h = manhattan_distance(neighbor)
+            new_f = new_g + new_h
+            
+            if neighbor_tuple not in visited or new_g < visited[neighbor_tuple]:
+                visited[neighbor_tuple] = new_g
+                heapq.heappush(pq, (new_f, new_g, neighbor, path + [current_board]))
+    
+    return None
+
+def auto_solve():
+    """Solve puzzle automatically with animation"""
+    global game_over, puzzle, zero_pos
+    
+    if game_over:
+        return
+    
+    solution = solve_puzzle(puzzle)
+    
+    if not solution:
+        messagebox.showerror("Error", "No solution found!")
+        return
+    
+    def animate_step(step=0):
+        global puzzle, zero_pos, game_over
+        
+        if step >= len(solution):
+            game_over = True
+            draw_puzzle()
+            messagebox.showinfo("Complete", "Puzzle Solved!")
+            return
+        
+        puzzle = solution[step]
+        zero_pos_tuple = find_zero(puzzle)
+        if zero_pos_tuple:
+            zero_pos[0], zero_pos[1] = zero_pos_tuple
+        draw_puzzle()
+        root.after(300, animate_step, step + 1)
+    
+    animate_step()
+
+def manual_move(event):
+    """Allow manual sliding of tiles"""
+    global puzzle, zero_pos, game_over
+    
+    if game_over:
+        return
+    
+    # Get clicked position
+    col = event.x // CELL
+    row = event.y // CELL
+    
+    if 0 <= row < SIZE and 0 <= col < SIZE:
+        # Check if clicked tile is adjacent to empty space
+        zero_r, zero_c = zero_pos
+        if (abs(row - zero_r) + abs(col - zero_c)) == 1:
+            # Swap clicked tile with empty space
+            puzzle[zero_r][zero_c], puzzle[row][col] = puzzle[row][col], puzzle[zero_r][zero_c]
+            zero_pos = [row, col]
+            draw_puzzle()
+            
+            # Check win
+            if puzzle == GOAL:
+                game_over = True
+                messagebox.showinfo("Congratulations!", "You solved the puzzle!")
+
+def reset_puzzle():
+    global puzzle, zero_pos, game_over
+    puzzle = [
+        [1, 2, 3],
+        [4, 0, 5],
+        [7, 8, 6]
+    ]
+    zero_pos = [1, 1]
+    game_over = False
+    draw_puzzle()
+
+def create_buttons():
+    button_frame = tk.Frame(root)
+    button_frame.pack(pady=10)
+    
+    solve_btn = tk.Button(button_frame, text="🤖 Auto Solve (A*)", command=auto_solve,
+                          font=("Arial", 12, "bold"), bg="lightgreen", padx=20)
+    solve_btn.pack(side=tk.LEFT, padx=5)
+    
+    reset_btn = tk.Button(button_frame, text="🔄 Reset Puzzle", command=reset_puzzle,
+                          font=("Arial", 12, "bold"), bg="lightyellow", padx=20)
+    reset_btn.pack(side=tk.LEFT, padx=5)
+    
+    info_label = tk.Label(root, text="💡 Click on a tile adjacent to the empty space to move it", 
+                          font=("Arial", 10), fg="gray")
+    info_label.pack()
+
+# Create interface
+create_buttons()
+draw_puzzle()
+
+# Bind click event
+canvas.bind("<Button-1>", manual_move)
+
+# Start the main loop
+root.mainloop()
